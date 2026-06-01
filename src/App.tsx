@@ -60,19 +60,34 @@ import {
   BarChart3
 } from 'lucide-react';
 import { format, differenceInDays, addDays } from 'date-fns';
-import { Booking, BookingStatus, PassportData, AgentStates, TripProposal, Office } from './types';
-
-// Configuration
-const COMPANY_NAME = 'Insight Travel & Tourism';
-const COMPANY_LOGO_URL = import.meta.env.VITE_COMPANY_LOGO_URL || '';
-const COMPANY_ADDRESS = import.meta.env.VITE_COMPANY_ADDRESS || 'Insight Building, Makkah';
-const COMPANY_WEBSITE = import.meta.env.VITE_COMPANY_WEBSITE || 'https://itt.sa';
+import { Booking, BookingStatus, PassportData, AgentStates, TripProposal, Office, Tenant } from './types';
+import SaaSLandingView from './SaaSLandingView';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// Subdomain Helper for multi-tenancy
+const getSubdomain = () => {
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('tenant') || null;
+  }
+  const parts = hostname.split('.');
+  if (parts.length > 2) {
+    const sub = parts[0];
+    if (sub === 'www' || sub === '26i') return null;
+    return sub;
+  }
+  return null;
+};
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userTenantId, setUserTenantId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tenantLoading, setTenantLoading] = useState(true);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
   const [view, setView] = useState<'landing' | 'onboarding' | 'processing' | 'confirmed' | 'management' | 'staff'>('landing');
   const [currentBooking, setCurrentBooking] = useState<Booking | null>(null);
   const [offices, setOffices] = useState<Office[]>([]);
@@ -80,7 +95,17 @@ export default function App() {
   const [adminVoucherView, setAdminVoucherView] = useState<Booking | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  const isAdmin = user?.email === 'ihtsourcing@gmail.com';
+  const subdomain = getSubdomain();
+
+  // Dynamic Branding Configuration
+  const COMPANY_NAME = tenant ? tenant.name : 'Insight Travel & Tourism';
+  const COMPANY_LOGO_URL = tenant ? tenant.logoUrl || '' : '';
+  const COMPANY_ADDRESS = tenant ? tenant.address || 'Insight Building, Makkah' : 'Insight Building, Makkah';
+  const COMPANY_WEBSITE = tenant ? `https://${tenant.subdomain}.26i.uk` : 'https://itt.sa';
+
+  const isSuperAdmin = userRole === 'superadmin' || user?.email === 'ihtsourcing@gmail.com';
+  const isOperatorAdmin = userRole === 'operator_admin' && userTenantId === subdomain;
+  const isAdmin = isSuperAdmin || isOperatorAdmin;
 
   const handleSignIn = async () => {
     if (isAuthenticating) return;
@@ -96,23 +121,118 @@ export default function App() {
     }
   };
 
+  // Seed default tenants and load current tenant config
   useEffect(() => {
-    const q = query(collection(db, 'offices'), where('isActive', '==', true));
+    const seedAndLoadTenant = async () => {
+      // Seed default tenants if they do not exist
+      const tenantsToSeed = [
+        {
+          id: 'nei',
+          name: 'NEI Umrah Services',
+          subdomain: 'nei',
+          logoUrl: 'https://images.unsplash.com/photo-1591604129939-f1efa4d8f7ec?auto=format&fit=crop&q=80&w=200',
+          primaryColor: 'hsl(142, 70%, 15%)',
+          secondaryColor: 'hsl(45, 100%, 40%)',
+          whatsappNumber: '966500000000',
+          address: 'NEI Building, Makkah',
+          saudiCompany: 'NEI Umrah Operators Ltd',
+          isActive: true
+        },
+        {
+          id: 'hhtt',
+          name: 'HHTT Hajj & Umrah',
+          subdomain: 'hhtt',
+          logoUrl: 'https://images.unsplash.com/photo-1564769662533-4f00a87b4056?auto=format&fit=crop&q=80&w=200',
+          primaryColor: 'hsl(220, 80%, 20%)',
+          secondaryColor: 'hsl(35, 90%, 50%)',
+          whatsappNumber: '966511111111',
+          address: 'HHTT Tower, Madinah',
+          saudiCompany: 'HHTT Pilgrimage Services',
+          isActive: true
+        }
+      ];
+
+      for (const t of tenantsToSeed) {
+        try {
+          await setDoc(doc(db, 'tenants', t.id), t, { merge: true });
+        } catch (e) {
+          console.warn("Seeding error:", e);
+        }
+      }
+
+      if (!subdomain) {
+        setTenant(null);
+        setTenantLoading(false);
+        return;
+      }
+
+      // Read active tenant config
+      const docRef = doc(db, 'tenants', subdomain);
+      onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          setTenant({ id: docSnap.id, ...docSnap.data() } as Tenant);
+        } else {
+          setTenant(null);
+        }
+        setTenantLoading(false);
+      }, (err) => {
+        console.error("Tenant Snapshot error:", err);
+        setTenant(null);
+        setTenantLoading(false);
+      });
+    };
+
+    seedAndLoadTenant();
+  }, [subdomain]);
+
+  // Load Offices
+  useEffect(() => {
+    if (!subdomain) return;
+    const q = query(
+      collection(db, 'offices'), 
+      where('isActive', '==', true), 
+      where('tenantId', '==', subdomain)
+    );
     return onSnapshot(q, (snapshot) => {
       setOffices(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Office)));
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'offices');
     });
-  }, []);
+  }, [subdomain]);
 
+  // Load user profile & bookings on auth changes
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
       setUser(u);
-      setLoading(false);
       if (u) {
+        // Sync/Create User Profile in db
+        const userRef = doc(db, 'users', u.uid);
+        onSnapshot(userRef, (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            setUserRole(data.role || 'user');
+            setUserTenantId(data.tenantId || null);
+          } else {
+            const defaultRole = u.email === 'ihtsourcing@gmail.com' ? 'superadmin' : 'user';
+            setDoc(userRef, {
+              uid: u.uid,
+              email: u.email,
+              displayName: u.displayName || '',
+              role: defaultRole,
+              tenantId: subdomain || 'default',
+              createdAt: serverTimestamp()
+            }, { merge: true }).then(() => {
+              setUserRole(defaultRole);
+              setUserTenantId(subdomain || 'default');
+            });
+          }
+        });
+
+        // Filter bookings by tenant ID & user ID
         const q = query(
           collection(db, 'bookings'), 
           where('userId', '==', u.uid),
+          where('tenantId', '==', subdomain || 'default'),
           orderBy('createdAt', 'desc')
         );
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -126,15 +246,49 @@ export default function App() {
           handleFirestoreError(error, OperationType.LIST, 'bookings');
         });
         return () => unsubscribe();
+      } else {
+        setUserRole(null);
+        setUserTenantId(null);
       }
+      setLoading(false);
     });
-  }, []);
+  }, [subdomain]);
 
-  if (loading) return (
+  // Set brand CSS custom properties
+  useEffect(() => {
+    if (tenant) {
+      document.documentElement.style.setProperty('--color-primary', tenant.primaryColor || 'hsl(142, 70%, 15%)');
+      document.documentElement.style.setProperty('--color-secondary', tenant.secondaryColor || 'hsl(45, 100%, 40%)');
+    } else {
+      document.documentElement.style.setProperty('--color-primary', 'hsl(142, 70%, 15%)');
+      document.documentElement.style.setProperty('--color-secondary', 'hsl(45, 100%, 40%)');
+    }
+  }, [tenant]);
+
+  // Render main app loader
+  if (loading || tenantLoading) return (
     <div className="min-h-screen bg-black flex items-center justify-center text-white font-sans">
       <Loader2 className="w-8 h-8 animate-spin opacity-50" />
     </div>
   );
+
+  // If no subdomain / tenant configured, render SaaS landing view
+  if (!subdomain) {
+    return <SaaSLandingView />;
+  }
+
+  // If subdomain page is accessed but tenant doesn't exist, show 404
+  if (!tenant) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center text-white font-sans space-y-4 p-6 text-center">
+        <h1 className="text-4xl font-light font-serif text-amber-500">Tenant Not Found</h1>
+        <p className="opacity-50 text-sm max-w-sm">The subdomain "{subdomain}" is not registered on the 26i.uk platform.</p>
+        <a href={window.location.protocol + '//' + window.location.host.split('.').slice(-2).join('.')} className="px-6 py-2 border border-white/20 hover:border-white/60 rounded-full text-xs uppercase tracking-widest transition-all">
+          Go to Platform Home
+        </a>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black text-white font-sans selection:bg-white selection:text-black">
@@ -198,7 +352,7 @@ export default function App() {
 
             <main className="pt-24 min-h-screen">
               {view === 'landing' && <LandingView onLogin={() => setView('onboarding')} />}
-              {view === 'onboarding' && <OnboardingView user={user} setView={setView} onSignIn={handleSignIn} isAuthenticating={isAuthenticating} />}
+              {view === 'onboarding' && <OnboardingView user={user} setView={setView} onSignIn={handleSignIn} isAuthenticating={isAuthenticating} tenantId={subdomain} />}
               {view === 'processing' && (
                 user ? <ProcessingView booking={currentBooking} /> : <div className="flex items-center justify-center h-full">Please sign in to view status</div>
               )}
@@ -217,11 +371,11 @@ export default function App() {
                     <ConfirmedView booking={adminVoucherView} setView={() => {}} onBack={() => setAdminVoucherView(null)} />
                   </div>
                 ) : (
-                  <ManagementDashboard onViewVoucher={(b) => setAdminVoucherView(b)} user={user} />
+                  <ManagementDashboard onViewVoucher={(b) => setAdminVoucherView(b)} user={user} tenantId={subdomain} />
                 )
               )}
               {view === 'staff' && (
-                user ? <StaffPortal user={user} /> : <div className="flex items-center justify-center h-full">Please sign in for Staff Portal</div>
+                user ? <StaffPortal user={user} tenantId={subdomain} /> : <div className="flex items-center justify-center h-full">Please sign in for Staff Portal</div>
               )}
             </main>
 
@@ -502,7 +656,7 @@ function BIInquiry({ bookings, leads, financials }: { bookings: any[], leads: an
   );
 }
 
-function StaffPortal({ user }: { user: User }) {
+function StaffPortal({ user, tenantId }: { user: User, tenantId: string }) {
   const [checkins, setCheckins] = useState<any[]>([]);
   const [isChecking, setIsChecking] = useState(false);
   const [staffType, setStaffType] = useState<'field' | 'international'>('field');
@@ -512,6 +666,7 @@ function StaffPortal({ user }: { user: User }) {
     const q = query(
       collection(db, 'employee_checkins'),
       where('uid', '==', user.uid),
+      where('tenantId', '==', tenantId),
       orderBy('timestamp', 'desc'),
       limit(5)
     );
@@ -522,7 +677,7 @@ function StaffPortal({ user }: { user: User }) {
         setLastAction(data[0].action);
       }
     });
-  }, [user.uid]);
+  }, [user.uid, tenantId]);
 
   const handleAction = async (action: 'check-in' | 'check-out') => {
     setIsChecking(true);
@@ -545,6 +700,7 @@ function StaffPortal({ user }: { user: User }) {
         action,
         location,
         erpStatus: 'pending',
+        tenantId,
         timestamp: serverTimestamp()
       };
 
@@ -856,7 +1012,7 @@ function MainActionView({ setView }: { setView: (v: any) => void }) {
   );
 }
 
-function OnboardingView({ user, setView, onSignIn, isAuthenticating }: { user: User | null, setView: (v: any) => void, onSignIn: () => Promise<void>, isAuthenticating: boolean }) {
+function OnboardingView({ user, setView, onSignIn, isAuthenticating, tenantId }: { user: User | null, setView: (v: any) => void, onSignIn: () => Promise<void>, isAuthenticating: boolean, tenantId: string | null }) {
   const [file, setFile] = useState<File | null>(null);
   const [date, setDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [whatsapp, setWhatsapp] = useState<string>('');
@@ -978,6 +1134,7 @@ function OnboardingView({ user, setView, onSignIn, isAuthenticating }: { user: U
         status: user ? 'converted' : 'new',
         passportData: extractedData,
         passportImage: passportBase64, // Storing base64 for 'leads DocType'
+        tenantId: tenantId || 'default',
         timestamp: serverTimestamp(),
         chatHistory: [
           { role: 'user', content: `Inquiry for ${duration} Umrah trip starting ${date}. Passport attached for ${extractedData.fullName}.`, timestamp: new Date().toISOString() },
@@ -1018,6 +1175,7 @@ function OnboardingView({ user, setView, onSignIn, isAuthenticating }: { user: U
         status: BookingStatus.PROCESSING,
         departureDate: date,
         passportData: extractedData,
+        tenantId: tenantId || 'default',
         agentStates: {
           ocrAgent: 'done',
           visaAgent: 'working',
@@ -1052,6 +1210,7 @@ function OnboardingView({ user, setView, onSignIn, isAuthenticating }: { user: U
         type: 'new_booking',
         message: `New trip inquiry from ${user.displayName || extractedData.fullName} (+${whatsapp})`,
         customerEmail: user.email,
+        tenantId: tenantId || 'default',
         timestamp: serverTimestamp()
       });
 
@@ -1610,7 +1769,7 @@ function StatusItem({ label, status }: { label: string, status: string }) {
   );
 }
 
-function ManagementDashboard({ onViewVoucher, user }: { onViewVoucher: (b: any) => void, user: User | null }) {
+function ManagementDashboard({ onViewVoucher, user, tenantId }: { onViewVoucher: (b: any) => void, user: User | null, tenantId: string | null }) {
   const [bookings, setBookings] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -1623,7 +1782,8 @@ function ManagementDashboard({ onViewVoucher, user }: { onViewVoucher: (b: any) 
   const [expandedLead, setExpandedLead] = useState<string | null>(null);
   const [erpHealth, setErpHealth] = useState<'checking' | 'online' | 'offline'>('checking');
 
-  const isAdmin = user?.email === 'ihtsourcing@gmail.com';
+  const isSuperAdmin = user?.email === 'ihtsourcing@gmail.com';
+  const isAdmin = isSuperAdmin || (user !== null); // Active staff/admin can view if logged in
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -1634,35 +1794,56 @@ function ManagementDashboard({ onViewVoucher, user }: { onViewVoucher: (b: any) 
       .then(data => setErpHealth(data.erpStatus === 'online' ? 'online' : 'offline'))
       .catch(() => setErpHealth('offline'));
 
-    const qB = query(collection(db, 'bookings'), orderBy('createdAt', 'desc'));
+    // Helpers to create queries depending on Super Admin status
+    const getTenantQuery = (colName: string) => {
+      const colRef = collection(db, colName);
+      if (isSuperAdmin) return query(colRef);
+      return query(colRef, where('tenantId', '==', tenantId || 'default'));
+    };
+
+    const qB = getTenantQuery('bookings');
     const unsubscribeB = onSnapshot(qB, (snapshot) => {
-      setBookings(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      docs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setBookings(docs);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'bookings'));
 
-    const qL = query(collection(db, 'leads'), orderBy('timestamp', 'desc'));
+    const qL = getTenantQuery('leads');
     const unsubscribeL = onSnapshot(qL, (snapshot) => {
-      setLeads(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      docs.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+      setLeads(docs);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'leads'));
 
-    const qN = query(collection(db, 'notifications'), orderBy('timestamp', 'desc'));
+    const qN = getTenantQuery('notifications');
     const unsubscribeN = onSnapshot(qN, (snapshot) => {
-      setNotifications(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      docs.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+      setNotifications(docs);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'notifications'));
 
-    const qS = query(collection(db, 'employee_checkins'), orderBy('timestamp', 'desc'), limit(50));
+    const qS = getTenantQuery('employee_checkins');
     const unsubscribeS = onSnapshot(qS, (snapshot) => {
-      setStaffLogs(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      docs.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+      setStaffLogs(docs.slice(0, 50));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'employee_checkins'));
 
-    const qO = query(collection(db, 'offices'), orderBy('createdAt', 'desc'));
+    const qO = getTenantQuery('offices');
     const unsubscribeO = onSnapshot(qO, (snapshot) => {
-      setOffices(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Office)));
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Office));
+      docs.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setOffices(docs);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'offices'));
 
     // Fetch financials across all bookings
-    const qF = query(collectionGroup(db, 'financials'), orderBy('timestamp', 'desc'));
+    const qF = query(collectionGroup(db, 'financials'));
     const unsubscribeF = onSnapshot(qF, (snapshot) => {
-      setFinancials(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      // Filter out files that don't belong to the active tenant in case of non-superadmin
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      const filtered = isSuperAdmin ? docs : docs.filter((f: any) => f.tenantId === (tenantId || 'default'));
+      filtered.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+      setFinancials(filtered);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'financials_group'));
 
     return () => {
@@ -1673,7 +1854,7 @@ function ManagementDashboard({ onViewVoucher, user }: { onViewVoucher: (b: any) 
       unsubscribeO();
       unsubscribeF();
     };
-  }, [isAdmin]);
+  }, [isAdmin, isSuperAdmin, tenantId]);
 
   const marginsByRegion = financials.reduce((acc: any, f) => {
     const region = f.region || 'Other';
@@ -1690,6 +1871,7 @@ function ManagementDashboard({ onViewVoucher, user }: { onViewVoucher: (b: any) 
     setIsAddingOffice(true);
     await addDoc(collection(db, 'offices'), {
       ...newOffice,
+      tenantId: tenantId || 'default',
       isActive: true,
       createdAt: serverTimestamp()
     });

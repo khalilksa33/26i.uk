@@ -6,6 +6,26 @@ export enum BookingStatus {
   FAILED = 'failed'
 }
 
+export interface Tenant {
+  id: string; // matches subdomain e.g. "nei", "hhtt"
+  name: string;
+  subdomain: string;
+  logoUrl?: string;
+  primaryColor?: string; // HSL or Hex
+  secondaryColor?: string;
+  whatsappNumber?: string;
+  email?: string;
+  address?: string;
+  saudiCompany?: string;
+  isActive: boolean;
+  createdAt: any;
+  erpConfig?: {
+    url: string;
+    apiKey: string;
+    apiSecret: string;
+  };
+}
+
 export interface TripProposal {
   id: string;
   label: string;
@@ -36,6 +56,7 @@ export interface TripProposal {
 
 export interface Office {
   id?: string;
+  tenantId?: string;
   name: string;
   region: string;
   whatsappNumber: string;
@@ -68,14 +89,17 @@ export interface AgentStates {
 
 export interface UserProfile {
   uid: string;
+  tenantId?: string;
   email: string;
   displayName: string;
   whatsapp: string;
+  role?: 'superadmin' | 'operator_admin' | 'agent' | 'subagent' | 'user';
   createdAt: any;
 }
 
 export interface Booking {
   id?: string;
+  tenantId?: string;
   userId: string;
   userEmail: string;
   userWhatsapp: string;
@@ -122,6 +146,7 @@ export interface Booking {
 
 export interface AgentLog {
   id?: string;
+  tenantId?: string;
   userId: string;
   agentName: string;
   message: string;
@@ -131,6 +156,7 @@ export interface AgentLog {
 
 export interface Lead {
   id?: string;
+  tenantId?: string;
   email: string;
   whatsapp: string;
   region: string;

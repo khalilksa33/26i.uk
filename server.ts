@@ -3,11 +3,47 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import fs from "fs";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Initialize Firebase client in backend to retrieve tenant ERP credentials dynamically
+const firebaseConfig = JSON.parse(fs.readFileSync(path.join(__dirname, 'firebase-applet-config.json'), 'utf8'));
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+
+async function getTenantErpConfig(tenantId: string) {
+  const defaultUrl = process.env.ERP_URL || "https://erp.iicc.sa";
+  const defaultKey = process.env.ERP_API_KEY;
+  const defaultSecret = process.env.ERP_API_SECRET;
+
+  if (!tenantId || tenantId === 'default') {
+    return { url: defaultUrl, key: defaultKey, secret: defaultSecret };
+  }
+
+  try {
+    const tenantDoc = await getDoc(doc(db, 'tenants', tenantId));
+    if (tenantDoc.exists()) {
+      const data = tenantDoc.data();
+      if (data.erpConfig?.url && data.erpConfig?.apiKey && data.erpConfig?.apiSecret) {
+        return {
+          url: data.erpConfig.url,
+          key: data.erpConfig.apiKey,
+          secret: data.erpConfig.apiSecret
+        };
+      }
+    }
+  } catch (e) {
+    console.error(`Error fetching ERP config for tenant ${tenantId}:`, e);
+  }
+
+  return { url: defaultUrl, key: defaultKey, secret: defaultSecret };
+}
 
 async function startServer() {
   const app = express();
@@ -34,28 +70,23 @@ async function startServer() {
   });
 
   // Simulated Umrah Agents API
-  // In a real app, these would be separate services or more complex logic
   app.post("/api/agents/visa/status", (req, res) => {
     const { bookingId } = req.body;
-    // Simulate visa processing steps
     res.json({ status: "processing", message: "Visa application submitted to MOFA." });
   });
 
-  // ERP Integration Endpoint
+  // ERP Integration Endpoint (Tenant Aware)
   app.post("/api/sync-erp", async (req, res) => {
     const { leadData } = req.body;
-    const ERP_URL = process.env.ERP_URL || "https://erp.iicc.sa";
-    const API_KEY = process.env.ERP_API_KEY;
-    const API_SECRET = process.env.ERP_API_SECRET;
+    const tenantId = leadData?.tenantId || "default";
+    const { url: ERP_URL, key: API_KEY, secret: API_SECRET } = await getTenantErpConfig(tenantId);
 
     if (!API_KEY || !API_SECRET) {
-      console.warn("ERP credentials missing. Skipping sync.");
+      console.warn(`ERP credentials missing for tenant: ${tenantId}. Skipping sync.`);
       return res.status(500).json({ status: "error", message: "ERP credentials missing" });
     }
 
     try {
-      // Frappe Lead DocType structure
-      // Note: This is an example structure for Frappe
       const payload = {
         first_name: leadData.email.split('@')[0],
         email_id: leadData.email,
@@ -87,21 +118,17 @@ async function startServer() {
     }
   });
 
-  // Biometric Machine Data Sync Endpoint
-  // This endpoint can be called by your local biometric machine or local script
+  // Biometric Machine Data Sync Endpoint (Tenant Aware)
   app.post("/api/sync-biometric", async (req, res) => {
     const { biometricData } = req.body;
-    const ERP_URL = process.env.ERP_URL || "https://erp.iicc.sa";
-    const API_KEY = process.env.ERP_API_KEY;
-    const API_SECRET = process.env.ERP_API_SECRET;
+    const tenantId = biometricData?.tenantId || "default";
+    const { url: ERP_URL, key: API_KEY, secret: API_SECRET } = await getTenantErpConfig(tenantId);
 
     if (!API_KEY || !API_SECRET) {
       return res.status(500).json({ status: "error", message: "ERP credentials missing" });
     }
 
     try {
-      // Forwarding biometric data to Frappe (ERP)
-      // Custom structure based on your biometric machine needs
       const response = await fetch(`${ERP_URL}/api/resource/Biometric Log`, {
         method: 'POST',
         headers: {
@@ -128,27 +155,25 @@ async function startServer() {
     }
   });
 
-  // Employee Check-in Sync for Payroll
+  // Employee Check-in Sync for Payroll (Tenant Aware)
   app.post("/api/sync-attendance", async (req, res) => {
     const { checkinData } = req.body;
-    const ERP_URL = process.env.ERP_URL || "https://erp.iicc.sa";
-    const API_KEY = process.env.ERP_API_KEY;
-    const API_SECRET = process.env.ERP_API_SECRET;
+    const tenantId = checkinData?.tenantId || "default";
+    const { url: ERP_URL, key: API_KEY, secret: API_SECRET } = await getTenantErpConfig(tenantId);
 
     if (!API_KEY || !API_SECRET) {
       return res.status(500).json({ status: "error", message: "ERP credentials missing" });
     }
 
     try {
-      // Frappe 'Employee Checkin' DocType
       const payload = {
-        employee: checkinData.email, // Using email as identifier if mapped correctly, or employee ID
+        employee: checkinData.email,
         log_type: checkinData.action === 'check-in' ? 'IN' : 'OUT',
         time: checkinData.timestamp,
         device_id: "UmrahGo App",
         latitude: checkinData.location?.latitude,
         longitude: checkinData.location?.longitude,
-        custom_staff_type: checkinData.type // field or international
+        custom_staff_type: checkinData.type
       };
 
       const response = await fetch(`${ERP_URL}/api/resource/Employee Checkin`, {
