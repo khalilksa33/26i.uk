@@ -20,7 +20,7 @@ fi
 # 2. Update Source (if inside a git repo)
 if [ -d .git ]; then
     echo "📥 Checking for updates..."
-    # git pull origin main
+    git pull origin master
 else
     echo "ℹ️  Not a git repository, skipping update check."
 fi

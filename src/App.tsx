@@ -63,7 +63,13 @@ import { format, differenceInDays, addDays } from 'date-fns';
 import { Booking, BookingStatus, PassportData, AgentStates, TripProposal, Office, Tenant } from './types';
 import SaaSLandingView from './SaaSLandingView';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const getGoogleGenAI = () => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) {
+    throw new Error("GEMINI_API_KEY is not configured in your environment variables (.env).");
+  }
+  return new GoogleGenAI({ apiKey: key });
+};
 
 // Subdomain Helper for multi-tenancy
 const getSubdomain = () => {
@@ -507,7 +513,7 @@ function BIInquiry({ bookings, leads, financials }: { bookings: any[], leads: an
       Be concise, professional, and focus on growth and operational efficiency.
       If the user asks about specific offices, groups the data by region if possible.`;
 
-      const result = await ai.models.generateContentStream({
+      const result = await getGoogleGenAI().models.generateContentStream({
         model: "gemini-3-flash-preview",
         contents: finalPrompt,
         config: { systemInstruction }
@@ -581,7 +587,7 @@ function BIInquiry({ bookings, leads, financials }: { bookings: any[], leads: an
       Data: ${JSON.stringify(dataSummary)}
       Be concise and professional.`;
 
-      const result = await ai.models.generateContent({
+      const result = await getGoogleGenAI().models.generateContent({
         model: "gemini-3-flash-preview",
         contents: {
           parts: [
@@ -1077,7 +1083,7 @@ function OnboardingView({ user, setView, onSignIn, isAuthenticating, tenantId }:
         const base64Data = await base64Promise;
         setPassportBase64(base64Data);
 
-        const response = await ai.models.generateContent({
+        const response = await getGoogleGenAI().models.generateContent({
           model: 'gemini-3-flash-preview',
           contents: [
             {
