@@ -100,6 +100,17 @@ service cloud.firestore {
 
     // --- Collection Matches ---
 
+    match /tenants/{tenantId} {
+      allow read: if true;
+      allow create: if isValidId(tenantId)
+        && incoming().id == tenantId
+        && incoming().subdomain == tenantId
+        && incoming().name is string && incoming().name.size() <= 256
+        && incoming().email is string && incoming().email.size() <= 256
+        && incoming().isActive == true;
+      allow update, delete: if isAdmin();
+    }
+
     match /employee_checkins/{checkinId} {
       allow create: if isSignedIn() && isValidEmployeeCheckin(incoming());
       allow read: if (isSignedIn() && resource.data.uid == request.auth.uid) || isAdmin();
