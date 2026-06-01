@@ -74,10 +74,14 @@ const getGoogleGenAI = () => {
 // Subdomain Helper for multi-tenancy
 const getSubdomain = () => {
   const hostname = window.location.hostname;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+  
+  // Exclude IP addresses (both IPv4 and IPv6/localhost IPs)
+  const isIPAddress = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(hostname);
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || isIPAddress) {
     const params = new URLSearchParams(window.location.search);
     return params.get('tenant') || null;
   }
+
   const parts = hostname.split('.');
   if (parts.length > 2) {
     const sub = parts[0];
@@ -288,13 +292,31 @@ export default function App() {
     return <SaaSLandingView />;
   }
 
+  // Helper to resolve home redirect URL safely across local IPs and subdomains
+  const getHomeUrl = () => {
+    const protocol = window.location.protocol;
+    const host = window.location.host;
+    const hostname = window.location.hostname;
+    const isIP = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(hostname);
+    
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || isIP) {
+      return `${protocol}//${host}`;
+    }
+    const parts = hostname.split('.');
+    if (parts.length > 2) {
+      const rootDomain = parts.slice(-2).join('.');
+      return `${protocol}//${rootDomain}`;
+    }
+    return `${protocol}//${host}`;
+  };
+
   // If subdomain page is accessed but tenant doesn't exist, show 404
   if (!tenant) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center text-white font-sans space-y-4 p-6 text-center">
         <h1 className="text-4xl font-light font-serif text-amber-500">Tenant Not Found</h1>
         <p className="opacity-50 text-sm max-w-sm">The subdomain "{subdomain}" is not registered on the 26i.uk platform.</p>
-        <a href={window.location.protocol + '//' + window.location.host.split('.').slice(-2).join('.')} className="px-6 py-2 border border-white/20 hover:border-white/60 rounded-full text-xs uppercase tracking-widest transition-all">
+        <a href={getHomeUrl()} className="px-6 py-2 border border-white/20 hover:border-white/60 rounded-full text-xs uppercase tracking-widest transition-all">
           Go to Platform Home
         </a>
       </div>
