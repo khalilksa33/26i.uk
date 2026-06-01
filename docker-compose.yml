@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  umrah-saas:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: umrah-saas-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ERP_URL=${ERP_URL}
+      - ERP_API_KEY=${ERP_API_KEY}
+      - ERP_API_SECRET=${ERP_API_SECRET}
+    env_file:
+      - .env
