@@ -9,11 +9,17 @@ import { getFirestore, doc, getDoc } from "firebase/firestore";
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const getDirname = () => {
+  try {
+    return path.dirname(fileURLToPath(import.meta.url));
+  } catch (e) {
+    return __dirname;
+  }
+};
+const _dirname = getDirname();
 
 // Initialize Firebase client in backend to retrieve tenant ERP credentials dynamically
-const firebaseConfig = JSON.parse(fs.readFileSync(path.join(__dirname, 'firebase-applet-config.json'), 'utf8'));
+const firebaseConfig = JSON.parse(fs.readFileSync(path.join(_dirname, 'firebase-applet-config.json'), 'utf8'));
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
