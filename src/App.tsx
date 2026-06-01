@@ -81,6 +81,11 @@ const getSubdomain = () => {
   return null;
 };
 
+let COMPANY_NAME = 'Insight Travel & Tourism';
+let COMPANY_LOGO_URL = '';
+let COMPANY_ADDRESS = 'Insight Building, Makkah';
+let COMPANY_WEBSITE = 'https://itt.sa';
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -98,10 +103,10 @@ export default function App() {
   const subdomain = getSubdomain();
 
   // Dynamic Branding Configuration
-  const COMPANY_NAME = tenant ? tenant.name : 'Insight Travel & Tourism';
-  const COMPANY_LOGO_URL = tenant ? tenant.logoUrl || '' : '';
-  const COMPANY_ADDRESS = tenant ? tenant.address || 'Insight Building, Makkah' : 'Insight Building, Makkah';
-  const COMPANY_WEBSITE = tenant ? `https://${tenant.subdomain}.26i.uk` : 'https://itt.sa';
+  COMPANY_NAME = tenant ? tenant.name : 'Insight Travel & Tourism';
+  COMPANY_LOGO_URL = tenant ? tenant.logoUrl || '' : '';
+  COMPANY_ADDRESS = tenant ? tenant.address || 'Insight Building, Makkah' : 'Insight Building, Makkah';
+  COMPANY_WEBSITE = tenant ? `https://${tenant.subdomain}.26i.uk` : 'https://itt.sa';
 
   const isSuperAdmin = userRole === 'superadmin' || user?.email === 'ihtsourcing@gmail.com';
   const isOperatorAdmin = userRole === 'operator_admin' && userTenantId === subdomain;
