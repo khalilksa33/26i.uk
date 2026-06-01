@@ -1,0 +1,171 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == "ihtsourcing@gmail.com";
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidUser(data) {
+      return data.uid == request.auth.uid 
+        && data.email is string && data.email.size() <= 256
+        && data.whatsapp is string && data.whatsapp.size() >= 8
+        && (data.get('displayName', '') is string && data.get('displayName', '').size() <= 256)
+        && data.createdAt == request.time;
+    }
+
+    function isValidBooking(data) {
+      return data.userId == request.auth.uid
+        && data.userEmail == request.auth.token.email
+        && data.userWhatsapp is string && data.userWhatsapp.size() >= 8
+        && data.status in ['draft', 'processing', 'proposing', 'confirmed', 'failed']
+        && data.departureDate is string && data.departureDate.size() == 10
+        && (data.get('passportData', null) == null || (
+             data.passportData.fullName is string && data.passportData.fullName.size() <= 512
+             && data.passportData.passportNumber is string && data.passportData.passportNumber.size() <= 64
+           ))
+        && (data.get('proposals', null) == null || data.proposals is list)
+        && (data.get('selectedProposal', null) == null || data.selectedProposal is int)
+        && data.createdAt == (resource == null ? request.time : existing().createdAt)
+        && data.updatedAt == request.time;
+    }
+
+    function isValidNotification(data) {
+      return data.bookingId is string && data.bookingId.size() <= 128
+        && data.type is string && data.type.size() <= 64
+        && data.message is string && data.message.size() <= 1024
+        && data.customerEmail is string && data.customerEmail.size() <= 256
+        && data.timestamp == request.time;
+    }
+
+    function isValidLog(data) {
+      return data.userId == request.auth.uid 
+        && data.agentName is string && data.agentName.size() <= 128
+        && data.message is string && data.message.size() <= 1024
+        && data.status is string && data.status.size() <= 64
+        && data.timestamp == request.time;
+    }
+
+    function isValidLead(data) {
+      return data.email is string && data.email.size() <= 256
+        && data.whatsapp is string && data.whatsapp.size() >= 8
+        && data.status in ['new', 'converted']
+        && (data.get('passportData', null) == null || (
+             data.passportData.fullName is string && data.passportData.fullName.size() <= 512
+             && data.passportData.passportNumber is string && data.passportData.passportNumber.size() <= 64
+           ))
+        && (data.get('passportImage', null) == null || (data.passportImage is string && data.passportImage.size() <= 2000000))
+        && data.timestamp == request.time;
+    }
+
+    function isValidEmployeeCheckin(data) {
+      return data.uid == request.auth.uid
+        && data.email == request.auth.token.email
+        && data.type in ['field', 'international']
+        && data.action in ['check-in', 'check-out']
+        && (data.get('name', null) == null || (data.name is string && data.name.size() <= 256))
+        && (data.get('location', null) == null || (
+             data.location.latitude is number && data.location.longitude is number
+           ))
+        && (data.get('erpStatus', 'pending') in ['pending', 'synced', 'failed'])
+        && data.timestamp == request.time;
+    }
+
+    // --- Collection Matches ---
+
+    match /employee_checkins/{checkinId} {
+      allow create: if isSignedIn() && isValidEmployeeCheckin(incoming());
+      allow read: if (isSignedIn() && resource.data.uid == request.auth.uid) || isAdmin();
+      allow update: if isAdmin();
+    }
+
+    match /notifications/{notifId} {
+      allow create: if isSignedIn() && isValidNotification(incoming());
+      allow read: if isAdmin();
+    }
+
+    match /offices/{officeId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /leads/{leadId} {
+      allow create: if isValidLead(incoming());
+      allow read, write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming()) 
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName']);
+    }
+
+    match /bookings/{bookingId} {
+      allow get: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || isAdmin();
+      
+      allow create: if isSignedIn() && isValidBooking(incoming()) && isValidId(bookingId);
+      
+      allow update: if (isSignedIn() && isOwner(existing().userId) && isValidBooking(incoming())
+        && (
+          // Action: Start processing
+          (existing().status == 'draft' && incoming().status == 'processing') ||
+          // Action: Generate proposals
+          (existing().status == 'processing' && incoming().status == 'proposing') ||
+          // Action: Select proposal
+          (existing().status == 'proposing' && incoming().status in ['proposing', 'confirmed', 'failed']) ||
+          // Action: Update data during processing
+          (existing().status == 'processing' && incoming().status in ['processing', 'confirmed', 'failed', 'proposing']) ||
+          // Immutable lock: cannot edit once confirmed or failed by standard user 
+          (existing().status == 'processing' && incoming().status == 'confirmed')
+        )) || isAdmin();
+
+      allow delete: if (isOwner(existing().userId) && existing().status == 'draft') || isAdmin();
+
+      match /logs/{logId} {
+        allow get: if isOwner(existing().userId) || isAdmin();
+        allow list: if isOwner(resource.data.userId) || isAdmin();
+        allow create: if (isOwner(incoming().userId) 
+          && get(/databases/$(database)/documents/bookings/$(bookingId)).data.userId == request.auth.uid 
+          && isValidLog(incoming())) || isAdmin();
+      }
+
+      match /financials/audit {
+        allow read: if isAdmin();
+        allow write: if isAdmin() || (isSignedIn() && isOwner(get(/databases/$(database)/documents/bookings/$(bookingId)).data.userId));
+      }
+    }
+
+    match /{path=**}/financials/{document} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
