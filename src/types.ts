@@ -1,0 +1,245 @@
+export enum BookingStatus {
+  DRAFT = 'draft',
+  PROCESSING = 'processing',
+  PROPOSING = 'proposing',
+  CONFIRMED = 'confirmed',
+  FAILED = 'failed'
+}
+
+export interface Tenant {
+  id: string; // matches subdomain e.g. "nei", "hhtt"
+  name: string;
+  subdomain: string;
+  logoUrl?: string;
+  primaryColor?: string; // HSL or Hex
+  secondaryColor?: string;
+  whatsappNumber?: string;
+  email?: string;
+  address?: string;
+  saudiCompany?: string;
+  isActive: boolean;
+  createdAt: any;
+  erpConfig?: {
+    url: string;
+    apiKey: string;
+    apiSecret: string;
+  };
+}
+
+export interface TripProposal {
+  id: string;
+  label: string;
+  flight: { 
+    outbound: { flightNumber: string; airline: string; sector: string; departure: string; arrival: string };
+    inbound: { flightNumber: string; airline: string; sector: string; departure: string; arrival: string };
+  };
+  makkahHotel: {
+    name: string;
+    stars: number;
+    distanceToHaram: string;
+    checkIn: string;
+    checkOut: string;
+    confirmNo?: string;
+  };
+  madinahHotel: {
+    name: string;
+    stars: number;
+    distanceToHaram: string;
+    checkIn: string;
+    checkOut: string;
+    confirmNo?: string;
+  };
+  transport: { name: string; type: string; brn: string };
+  buyingPrice: number;
+  sellingPrice: number;
+}
+
+export interface Office {
+  id?: string;
+  tenantId?: string;
+  name: string;
+  region: string;
+  whatsappNumber: string;
+  isActive: boolean;
+  createdAt: any;
+}
+
+export interface Proposal {
+  flightNumber: string;
+  airline: string;
+  departureTime: string;
+  price: number;
+}
+
+export interface PassportData {
+  fullName: string;
+  passportNumber: string;
+  expiryDate: string;
+  nationality: string;
+  dob: string;
+  gender?: string;
+}
+
+export interface AgentStates {
+  ocrAgent: 'idle' | 'working' | 'done' | 'error';
+  visaAgent: 'idle' | 'working' | 'done' | 'error';
+  flightAgent: 'idle' | 'working' | 'done' | 'error';
+  hotelAgent: 'idle' | 'working' | 'done' | 'error';
+}
+
+export interface UserProfile {
+  uid: string;
+  tenantId?: string;
+  email: string;
+  displayName: string;
+  whatsapp: string;
+  role?: 'superadmin' | 'operator_admin' | 'agent' | 'subagent' | 'user';
+  createdAt: any;
+}
+
+export interface Booking {
+  id?: string;
+  tenantId?: string;
+  userId: string;
+  userEmail: string;
+  userWhatsapp: string;
+  region?: string;
+  duration?: '1 Week' | '2 Weeks' | '4 Weeks';
+  status: BookingStatus;
+  departureDate: string;
+  passportData?: PassportData;
+  pilgrims?: { name: string; gender: string; ppNo: string; pax: string; beds: string; visaNo: string; pnr: string }[];
+  agentStates: AgentStates;
+  proposals?: TripProposal[];
+  selectedProposal?: number;
+  visa?: {
+    status: 'Pending' | 'Issued' | 'Rejected';
+    referenceNumber: string;
+    issuedAt: any;
+  };
+  flight?: {
+    outbound: { flightNumber: string; airline: string; sector: string; departure: string; arrival: string };
+    inbound: { flightNumber: string; airline: string; sector: string; departure: string; arrival: string };
+  };
+  makkahHotel?: {
+    name: string;
+    stars: number;
+    distanceToHaram: string;
+    checkIn?: string;
+    checkOut?: string;
+    confirmNo?: string;
+  };
+  madinahHotel?: {
+    name: string;
+    stars: number;
+    distanceToHaram: string;
+    checkIn?: string;
+    checkOut?: string;
+    confirmNo?: string;
+  };
+  transport?: { name: string; type: string; brn: string };
+  location?: { latitude: number; longitude: number; address?: string };
+  erpStatus?: 'pending' | 'synced' | 'failed';
+  ownerTenantId?: string;
+  jvCampaignId?: string;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface AgentLog {
+  id?: string;
+  tenantId?: string;
+  userId: string;
+  agentName: string;
+  message: string;
+  status: string;
+  timestamp: any;
+}
+
+export interface Lead {
+  id?: string;
+  tenantId?: string;
+  email: string;
+  whatsapp: string;
+  region: string;
+  duration: string;
+  departureDate: string;
+  location?: { latitude: number; longitude: number; address?: string };
+  erpStatus?: 'pending' | 'synced' | 'failed';
+  status: 'new' | 'converted';
+  ownerTenantId?: string;
+  jvCampaignId?: string;
+  timestamp: any;
+  chatHistory?: { role: 'user' | 'assistant'; content: string; timestamp: string }[];
+}
+
+export interface BudgetCategory {
+  name: string;
+  allocated: number;
+  spent: number;
+}
+
+export interface Budget {
+  id?: string;
+  tenantId: string;
+  totalRevenueTarget: number;
+  totalCostBudget: number;
+  totalOpExBudget: number;
+  categories: BudgetCategory[];
+  fiscalYear: string;
+}
+
+export interface Transaction {
+  id?: string;
+  tenantId: string;
+  type: 'deposit' | 'expense' | 'revenue';
+  amount: number;
+  description: string;
+  category: string;
+  timestamp: any;
+}
+
+export interface Agent {
+  id?: string;
+  tenantId: string;
+  parentAgentId?: string; // Reference to master agent if this is a subagent
+  name: string;
+  email: string;
+  role: 'agent' | 'subagent';
+  isActive: boolean;
+  commissionRate: number; // percentage
+  balance: number;
+  createdAt: any;
+}
+
+export interface JvPartner {
+  id?: string;
+  tenantId: string;
+  name: string;
+  country: string;
+  ceo: string;
+  iataCode?: string;
+  contactPhone: string;
+  contactEmail: string;
+  isActive: boolean;
+}
+
+export interface JmcSignatures {
+  partnerApproved: boolean;
+  tenantApproved: boolean;
+}
+
+export interface JvCampaign {
+  id?: string;
+  tenantId: string;
+  partnerId: string;
+  name: string;
+  scope: string;
+  totalValue: number;
+  profitSplitRatio: number; // e.g. 60 for 60% ITT / 40% Dunya
+  ittInvestment: number;
+  partnerInvestment: number;
+  status: 'Draft' | 'Active' | 'Completed';
+  jmcSignatures: JmcSignatures;
+}
+

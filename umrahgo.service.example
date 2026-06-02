@@ -1,0 +1,17 @@
+[Unit]
+Description=UmrahGo AI Agent Service
+After=network.target
+
+[Service]
+Type=simple
+User=iht
+WorkingDirectory=/home/iht/umrah-go
+ExecStart=/usr/bin/npm start
+Restart=always
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=ERP_URL=https://erp.iicc.sa
+# Add other secrets here
+
+[Install]
+WantedBy=multi-user.target

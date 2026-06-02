@@ -1,0 +1,224 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Private user information and preferences.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "whatsapp"]
+    },
+    "Booking": {
+      "title": "Umrah Booking",
+      "description": "The complete state of an Umrah trip booking.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userWhatsapp": { "type": "string" },
+        "region": { "type": "string" },
+        "duration": { "type": "string", "enum": ["1 Week", "2 Weeks", "4 Weeks"] },
+        "status": { "type": "string", "enum": ["draft", "processing", "proposing", "confirmed", "failed"] },
+        "departureDate": { "type": "string", "format": "date" },
+        "passportData": {
+          "type": "object",
+          "properties": {
+            "fullName": { "type": "string" },
+            "passportNumber": { "type": "string" },
+            "expiryDate": { "type": "string" },
+            "nationality": { "type": "string" },
+            "dob": { "type": "string" }
+          }
+        },
+        "proposals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "flight": { "type": "object" },
+              "makkahHotel": { "type": "object" },
+              "madinahHotel": { "type": "object" },
+              "transport": { "type": "string" },
+              "sellingPrice": { "type": "number" }
+            }
+          }
+        },
+        "selectedProposal": { "type": "number" },
+        "visa": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "string" },
+            "referenceNumber": { "type": "string" },
+            "issuedAt": { "type": "string" }
+          }
+        },
+        "flight": { "type": "object" },
+        "hotel": { "type": "object" },
+        "transport": { "type": "string" },
+        "agentStates": {
+          "type": "object",
+          "properties": {
+            "ocrAgent": { "type": "string" },
+            "visaAgent": { "type": "string" },
+            "flightAgent": { "type": "string" },
+            "hotelAgent": { "type": "string" }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "status", "departureDate"]
+    },
+    "FinancialRecord": {
+      "title": "Financial Audit",
+      "description": "Margin tracking for management only.",
+      "type": "object",
+      "properties": {
+        "bookingId": { "type": "string" },
+        "region": { "type": "string" },
+        "buyingPrice": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "margin": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Notification": {
+      "title": "Management Notification",
+      "description": "Alerts for company management regarding new bookings.",
+      "type": "object",
+      "properties": {
+        "bookingId": { "type": "string" },
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "EmployeeCheckin": {
+      "title": "Staff Check-in",
+      "description": "Time and location tracking for field and international staff.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["field", "international"] },
+        "action": { "type": "string", "enum": ["check-in", "check-out"] },
+        "location": {
+          "type": "object",
+          "properties": {
+            "latitude": { "type": "number" },
+            "longitude": { "type": "number" }
+          }
+        },
+        "erpStatus": { "type": "string", "enum": ["pending", "synced", "failed"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "type", "action", "timestamp"]
+    },
+    "Office": {
+      "title": "Regional Office",
+      "description": "Global office configuration for support and logistics.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "region": { "type": "string" },
+        "whatsappNumber": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "region", "whatsappNumber", "isActive"]
+    },
+    "AgentLog": {
+      "title": "Agent Activity Log",
+      "description": "Logs for specific agent actions within a booking.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "agentName": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "agentName", "message", "status", "timestamp"]
+    },
+    "Lead": {
+      "title": "Customer Lead",
+      "description": "Captured user info before formal booking or login.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "region": { "type": "string" },
+        "duration": { "type": "string" },
+        "departureDate": { "type": "string" },
+        "status": { "type": "string" },
+        "passportData": {
+          "type": "object",
+          "properties": {
+            "fullName": { "type": "string" },
+            "passportNumber": { "type": "string" },
+            "expiryDate": { "type": "string" },
+            "nationality": { "type": "string" },
+            "dob": { "type": "string" }
+          }
+        },
+        "passportImage": { "type": "string", "description": "Base64 encoded passport image" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "chatHistory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": { "type": "string" },
+              "content": { "type": "string" },
+              "timestamp": { "type": "string" }
+            }
+          }
+        }
+      },
+      "required": ["email", "whatsapp", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents."
+    },
+    "leads/{leadId}": {
+      "schema": "Lead",
+      "description": "Captured inquiries from non-logged in users."
+    },
+    "bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Umrah booking details."
+    },
+    "bookings/{bookingId}/logs/{logId}": {
+      "schema": "AgentLog",
+      "description": "Individual logs for agents working on this booking."
+    },
+    "bookings/{bookingId}/financials/audit": {
+      "schema": "FinancialRecord",
+      "description": "Hidden cost tracking for this booking."
+    },
+    "notifications/{notifId}": {
+      "schema": "Notification",
+      "description": "Global notifications for management."
+    },
+    "offices/{officeId}": {
+      "schema": "Office",
+      "description": "Global support and regional office registry."
+    },
+    "employee_checkins/{checkinId}": {
+      "schema": "EmployeeCheckin",
+      "description": "Staff attendance and location logs."
+    }
+  }
+}

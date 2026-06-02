@@ -1,0 +1,13 @@
+{
+  "name": "UmrahGo AI Agent",
+  "description": "An AI-powered multi-agent system that automates Umrah trip bookings, including passport processing, visa handling, and flight arrangements.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "AI Agent Orchestration",
+    "Passport OCR & Verification",
+    "Automated Travel Logistics"
+  ]
+}
