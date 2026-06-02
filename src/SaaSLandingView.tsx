@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { db } from './lib/firebase';
-import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db, doc, setDoc, serverTimestamp } from './lib/firebase';
 import { 
   Building2, 
   Sparkles, 
@@ -19,6 +18,7 @@ export default function SaaSLandingView() {
   const [formData, setFormData] = useState({
     companyName: '',
     subdomain: '',
+    customDomain: '',
     adminEmail: '',
     adminWhatsapp: '',
     saudiCompany: '',
@@ -49,6 +49,7 @@ export default function SaaSLandingView() {
         id: cleanSubdomain,
         name: formData.companyName.trim(),
         subdomain: cleanSubdomain,
+        customDomain: formData.customDomain.trim().toLowerCase() || null,
         logoUrl: 'https://images.unsplash.com/photo-1591604129939-f1efa4d8f7ec?auto=format&fit=crop&q=80&w=200',
         primaryColor: formData.primaryColor,
         secondaryColor: 'hsl(45, 100%, 40%)', // Default gold
@@ -215,6 +216,17 @@ export default function SaaSLandingView() {
                       placeholder="e.g. Al Safwa Umrah & Hajj Services Co." 
                       value={formData.saudiCompany}
                       onChange={e => setFormData({ ...formData, saudiCompany: e.target.value })}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-white/30 outline-none transition-all placeholder:opacity-20"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] opacity-40 uppercase tracking-widest">Custom Domain (Optional)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. www.alsafwatravel.com" 
+                      value={formData.customDomain}
+                      onChange={e => setFormData({ ...formData, customDomain: e.target.value })}
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-white/30 outline-none transition-all placeholder:opacity-20"
                     />
                   </div>

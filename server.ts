@@ -4,8 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import fs from "fs";
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { db as localDb } from "./database";
 
 dotenv.config();
 
@@ -18,11 +17,6 @@ const getDirname = () => {
 };
 const _dirname = getDirname();
 
-// Initialize Firebase client in backend to retrieve tenant ERP credentials dynamically
-const firebaseConfig = JSON.parse(fs.readFileSync(path.join(_dirname, 'firebase-applet-config.json'), 'utf8'));
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-
 async function getTenantErpConfig(tenantId: string) {
   const defaultUrl = process.env.ERP_URL || "https://erp.iicc.sa";
   const defaultKey = process.env.ERP_API_KEY;
@@ -33,16 +27,13 @@ async function getTenantErpConfig(tenantId: string) {
   }
 
   try {
-    const tenantDoc = await getDoc(doc(db, 'tenants', tenantId));
-    if (tenantDoc.exists()) {
-      const data = tenantDoc.data();
-      if (data.erpConfig?.url && data.erpConfig?.apiKey && data.erpConfig?.apiSecret) {
-        return {
-          url: data.erpConfig.url,
-          key: data.erpConfig.apiKey,
-          secret: data.erpConfig.apiSecret
-        };
-      }
+    const tenant = localDb.find('tenants', t => t.id === tenantId);
+    if (tenant && tenant.erpConfig?.url && tenant.erpConfig?.apiKey && tenant.erpConfig?.apiSecret) {
+      return {
+        url: tenant.erpConfig.url,
+        key: tenant.erpConfig.apiKey,
+        secret: tenant.erpConfig.apiSecret
+      };
     }
   } catch (e) {
     console.error(`Error fetching ERP config for tenant ${tenantId}:`, e);
@@ -58,6 +49,166 @@ async function startServer() {
   app.use(express.json());
 
   // API routes
+  
+  // Local Database Generic API Endpoints
+
+  // Resolve tenant by subdomain or custom domain mapping
+  app.get("/api/tenants/resolve", (req, res) => {
+    const host = req.query.host as string;
+    if (!host) {
+      return res.status(400).json({ error: "Missing host parameter" });
+    }
+
+    // 1. Handle localhost or raw IPs (e.g. 192.168.8.59?tenant=nei)
+    const isIP = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(host);
+    if (host === 'localhost' || host === '127.0.0.1' || isIP) {
+      const queryTenant = req.query.tenant as string;
+      if (queryTenant) {
+        const tenant = localDb.find('tenants', t => t.id === queryTenant);
+        if (tenant) return res.json(tenant);
+      }
+      return res.status(404).json({ error: "Tenant not found for IP/localhost query" });
+    }
+
+    // 2. Resolve via Custom Domain match first
+    const customMatch = localDb.find('tenants', t => t.customDomain === host || t.customDomain === `www.${host}` || host === `www.${t.customDomain}`);
+    if (customMatch) {
+      return res.json(customMatch);
+    }
+
+    // 3. Resolve via Subdomain (e.g. nei.26i.uk -> nei)
+    const parts = host.split('.');
+    if (parts.length > 2) {
+      const sub = parts[0];
+      if (sub !== 'www' && sub !== '26i') {
+        const subdomainMatch = localDb.find('tenants', t => t.subdomain === sub);
+        if (subdomainMatch) {
+          return res.json(subdomainMatch);
+        }
+      }
+    }
+
+    // Return 404 if no matching tenant config exists
+    res.status(404).json({ error: "Tenant not resolved" });
+  });
+
+  // Sync/Create User Profile
+  app.post("/api/auth/sync-profile", (req, res) => {
+    const user = req.body;
+    if (!user.uid) return res.status(400).json({ error: "Missing uid" });
+    
+    const existing = localDb.find('users', u => u.uid === user.uid);
+    if (existing) {
+      const updated = localDb.update('users', 'uid', user.uid, {
+        displayName: user.displayName || existing.displayName,
+        email: user.email || existing.email,
+        tenantId: user.tenantId || existing.tenantId
+      });
+      return res.json(updated);
+    } else {
+      const defaultRole = user.email === 'ihtsourcing@gmail.com' ? 'superadmin' : 'user';
+      const newUser = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || '',
+        role: defaultRole,
+        tenantId: user.tenantId || 'default',
+        createdAt: new Date().toISOString()
+      };
+      localDb.insert('users', newUser);
+      return res.json(newUser);
+    }
+  });
+
+  // Get single doc
+  app.get("/api/db/:collection/:id", (req, res) => {
+    const { collection, id } = req.params;
+    const item = localDb.find(collection as any, (x: any) => (x.id === id || x.uid === id));
+    if (!item) return res.status(404).json(null);
+    res.json(item);
+  });
+
+  // Create/Overwrite single doc
+  app.post("/api/db/:collection/:id", (req, res) => {
+    const { collection, id } = req.params;
+    const data = req.body;
+    
+    // Ensure ID fields are synced with route params
+    const idField = collection === 'users' ? 'uid' : 'id';
+    data[idField] = id;
+    
+    const existing = localDb.find(collection as any, (x: any) => x[idField] === id);
+    if (existing) {
+      const updated = localDb.update(collection as any, idField, id, data);
+      res.json(updated);
+    } else {
+      localDb.insert(collection as any, data);
+      res.json(data);
+    }
+  });
+
+  // Update single doc fields (PATCH)
+  app.patch("/api/db/:collection/:id", (req, res) => {
+    const { collection, id } = req.params;
+    const updates = req.body;
+    const idField = collection === 'users' ? 'uid' : 'id';
+    
+    const updated = localDb.update(collection as any, idField, id, updates);
+    if (!updated) return res.status(404).json({ error: "Document not found" });
+    res.json(updated);
+  });
+
+  // Delete single doc
+  app.delete("/api/db/:collection/:id", (req, res) => {
+    const { collection, id } = req.params;
+    const idField = collection === 'users' ? 'uid' : 'id';
+    const deleted = localDb.delete(collection as any, idField, id);
+    res.json({ success: deleted });
+  });
+
+  // Create collection item (auto-id)
+  app.post("/api/db/:collection", (req, res) => {
+    const { collection } = req.params;
+    const data = req.body;
+    
+    const idField = collection === 'users' ? 'uid' : 'id';
+    if (!data[idField]) {
+      data[idField] = collection.substring(0, 3) + '_' + Math.random().toString(36).substring(2, 9);
+    }
+    
+    localDb.insert(collection as any, data);
+    res.json(data);
+  });
+
+  // Get collection with optional query filters
+  app.get("/api/db/:collection", (req, res) => {
+    const { collection } = req.params;
+    let list = localDb.getCollection(collection as any);
+    
+    // Parse query params for filtering
+    // Query structure: ?where_field={"op":"==","val":"value"}
+    Object.keys(req.query).forEach(key => {
+      if (key.startsWith('where_')) {
+        const field = key.replace('where_', '');
+        try {
+          const condition = JSON.parse(req.query[key] as string);
+          if (condition.op === '==' || condition.op === '===') {
+            list = list.filter((item: any) => item[field] === condition.val);
+          }
+        } catch (e) {
+          // ignore invalid query params
+        }
+      }
+    });
+
+    // Special order by sorting if present
+    if (collection === 'bookings') {
+      list = [...list].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
+
+    res.json(list);
+  });
+
   app.get("/api/health", async (req, res) => {
     const ERP_URL = process.env.ERP_URL || "https://erp.iicc.sa";
     let erpStatus = "offline";

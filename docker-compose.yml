@@ -18,3 +18,5 @@ services:
       - ERP_API_SECRET=${ERP_API_SECRET}
     env_file:
       - .env
+    volumes:
+      - ./data:/app/data

@@ -6,10 +6,12 @@
 /// <reference types="vite/client" />
 
 import React, { useState, useEffect, useRef } from 'react';
-import { auth, db, signInWithGoogle } from './lib/firebase';
-import { handleFirestoreError, OperationType } from './lib/error-handler';
-import { onAuthStateChanged, User } from 'firebase/auth';
 import { 
+  auth, 
+  db, 
+  signInWithGoogle,
+  onAuthStateChanged,
+  User,
   collection, 
   addDoc, 
   setDoc,
@@ -22,9 +24,10 @@ import {
   orderBy, 
   serverTimestamp,
   Timestamp,
-  collectionGroup,
-  limit
-} from 'firebase/firestore';
+  limit,
+  handleFirestoreError,
+  OperationType
+} from './lib/firebase';
 import { GoogleGenAI, Type } from '@google/genai';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -175,45 +178,43 @@ export default function App() {
         }
       }
 
-      if (!subdomain) {
-        setTenant(null);
-        setTenantLoading(false);
-        return;
-      }
-
-      // Read active tenant config
-      const docRef = doc(db, 'tenants', subdomain);
-      onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          setTenant({ id: docSnap.id, ...docSnap.data() } as Tenant);
+      // Read active tenant config dynamically based on request hostname (handles custom domains)
+      try {
+        const queryParams = new URLSearchParams(window.location.search);
+        const tenantQueryParam = queryParams.get('tenant') || '';
+        const res = await fetch(`/api/tenants/resolve?host=${window.location.hostname}&tenant=${tenantQueryParam}`);
+        if (res.ok) {
+          const resolvedTenant = await res.json();
+          setTenant(resolvedTenant);
         } else {
           setTenant(null);
         }
-        setTenantLoading(false);
-      }, (err) => {
-        console.error("Tenant Snapshot error:", err);
+      } catch (err) {
+        console.error("Failed to resolve tenant:", err);
         setTenant(null);
+      } finally {
         setTenantLoading(false);
-      });
+      }
     };
 
     seedAndLoadTenant();
-  }, [subdomain]);
+  }, []);
 
   // Load Offices
   useEffect(() => {
-    if (!subdomain) return;
+    const tenantId = tenant?.id;
+    if (!tenantId) return;
     const q = query(
       collection(db, 'offices'), 
       where('isActive', '==', true), 
-      where('tenantId', '==', subdomain)
+      where('tenantId', '==', tenantId)
     );
     return onSnapshot(q, (snapshot) => {
       setOffices(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Office)));
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, 'offices');
     });
-  }, [subdomain]);
+  }, [tenant]);
 
   // Load user profile & bookings on auth changes
   useEffect(() => {
@@ -234,11 +235,11 @@ export default function App() {
               email: u.email,
               displayName: u.displayName || '',
               role: defaultRole,
-              tenantId: subdomain || 'default',
+              tenantId: tenant?.id || subdomain || 'default',
               createdAt: serverTimestamp()
             }, { merge: true }).then(() => {
               setUserRole(defaultRole);
-              setUserTenantId(subdomain || 'default');
+              setUserTenantId(tenant?.id || subdomain || 'default');
             });
           }
         });
@@ -247,7 +248,7 @@ export default function App() {
         const q = query(
           collection(db, 'bookings'), 
           where('userId', '==', u.uid),
-          where('tenantId', '==', subdomain || 'default'),
+          where('tenantId', '==', tenant?.id || subdomain || 'default'),
           orderBy('createdAt', 'desc')
         );
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -267,7 +268,7 @@ export default function App() {
       }
       setLoading(false);
     });
-  }, [subdomain]);
+  }, [tenant, subdomain]);
 
   // Set brand CSS custom properties
   useEffect(() => {
